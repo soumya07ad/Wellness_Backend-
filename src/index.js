@@ -31,8 +31,24 @@ if (serviceAccount) {
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Middleware — CORS locked to allowed origins only.
+// Android app requests have no Origin header and pass through automatically.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim());
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 app.use(express.json());
 
 // Health check route
@@ -46,6 +62,11 @@ app.use('/api/sleep', require('./routes/sleep'));
 app.use('/api/mood', require('./routes/mood'));
 app.use('/api/journal', require('./routes/journal'));
 app.use('/api/streaks', require('./routes/streaks'));
+app.use('/api/user', require('./routes/user'));
+app.use('/api/coach', require('./routes/coach'));
+app.use('/api/workouts', require('./routes/workouts'));
+app.use('/api/meditation', require('./routes/meditation'));
+app.use('/api/timers', require('./routes/timers'));
 
 // Global error handler
 app.use((err, req, res, next) => {

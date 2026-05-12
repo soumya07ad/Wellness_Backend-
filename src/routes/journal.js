@@ -17,16 +17,23 @@ router.post('/sync', auth, async (req, res) => {
       return res.status(400).json({ error: 'entries array is required and must not be empty' });
     }
 
-    const rows = entries.map((e) => ({
-      user_id: req.userId,
-      title: e.title,
-      content: e.content,
-      date: e.date,
-    }));
+    const rows = entries.map((e) => {
+      const row = {
+        user_id: req.userId,
+        title: e.title,
+        content: e.content,
+        date: e.date,
+      };
+      if (e.id) {
+        row.id = e.id;
+      }
+      return row;
+    });
 
+    // Use upsert to allow updates if id is provided
     const { data, error } = await supabase
       .from('journal_entries')
-      .insert(rows);
+      .upsert(rows);
 
     if (error) {
       console.error('Supabase journal sync error:', error);
@@ -40,4 +47,62 @@ router.post('/sync', auth, async (req, res) => {
   }
 });
 
+/**
+ * GET /recent
+ * Returns journal entries for the last 7 days for the authenticated user.
+ */
+router.get('/recent', auth, async (req, res) => {
+  try {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data, error } = await supabase
+      .from('journal_entries')
+      .select('*')
+      .eq('user_id', req.userId)
+      .gte('date', sevenDaysAgo.toISOString().split('T')[0])
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Supabase journal recent error:', error);
+      return res.status(500).json({ error: 'Failed to fetch recent journal entries' });
+    }
+
+    return res.json(data);
+  } catch (error) {
+    console.error('Journal recent error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
+
+/**
+ * DELETE /:id
+ * Deletes a journal entry for the authenticated user.
+ */
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'id parameter is required' });
+    }
+
+    const { error } = await supabase
+      .from('journal_entries')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', req.userId);
+
+    if (error) {
+      console.error('Supabase journal delete error:', error);
+      return res.status(500).json({ error: 'Failed to delete journal entry' });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Journal delete error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
