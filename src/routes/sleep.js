@@ -6,7 +6,7 @@ const auth = require('../middleware/auth');
 /**
  * POST /sync
  * Syncs sleep entries from the Android app to Supabase.
- * Body: { entries: [ { date, sleepHours } ] }
+ * Body: { entries: [ { date, totalMinutes, deepMinutes, lightMinutes, awakeMinutes, startTime, endTime, quality } ] }
  */
 router.post('/sync', auth, async (req, res) => {
   try {
@@ -16,22 +16,32 @@ router.post('/sync', auth, async (req, res) => {
       return res.status(400).json({ error: 'entries array is required and must not be empty' });
     }
 
-    // Validate each entry
-    for (let i = 0; i < entries.length; i++) {
-      const e = entries[i];
-      if (typeof e.sleepHours !== 'number' || e.sleepHours < 0) {
-        return res.status(400).json({ error: `entries[${i}].sleepHours must be a non-negative number` });
+    const rows = entries.map((e) => {
+      // Calculate quality score if not provided or if we want to override
+      // E.g., basic heuristic: deep sleep > 15% is good, total > 7 hours is good.
+      let qualityScore = e.quality || 0;
+      if (qualityScore === 0 && e.totalMinutes > 0) {
+        let score = 50; // base score
+        // add up to 20 points for total duration (7 hours = 420 mins is optimal)
+        score += Math.min(20, (e.totalMinutes / 420) * 20);
+        // add up to 30 points for deep sleep ratio (20% is optimal)
+        const deepRatio = e.deepMinutes / e.totalMinutes;
+        score += Math.min(30, (deepRatio / 0.20) * 30);
+        qualityScore = Math.round(score);
       }
-      if (!e.date || isNaN(Date.parse(e.date))) {
-        return res.status(400).json({ error: `entries[${i}].date must be a valid date string` });
-      }
-    }
 
-    const rows = entries.map((e) => ({
-      user_id: req.userId,
-      date: e.date,
-      sleep_hours: e.sleepHours,
-    }));
+      return {
+        user_id: req.userId,
+        date: e.date,
+        sleep_hours: e.totalMinutes ? e.totalMinutes / 60.0 : (e.sleepHours || 0),
+        deep_minutes: e.deepMinutes || 0,
+        light_minutes: e.lightMinutes || 0,
+        awake_minutes: e.awakeMinutes || 0,
+        start_time: e.startTime || null,
+        end_time: e.endTime || null,
+        quality_score: qualityScore
+      };
+    });
 
     const { data, error } = await supabase
       .from('sleep_entries')
@@ -45,6 +55,46 @@ router.post('/sync', auth, async (req, res) => {
     return res.json({ success: true, synced: rows.length });
   } catch (error) {
     console.error('Sleep sync error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /health-score
+ * Computes a holistic daily health score based on sleep, activity, and HRV.
+ */
+router.get('/health-score', auth, async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+
+    // 1. Get Sleep Quality
+    const { data: sleepData } = await supabase
+      .from('sleep_entries')
+      .select('quality_score')
+      .eq('user_id', req.userId)
+      .eq('date', date)
+      .single();
+
+    const sleepScore = sleepData?.quality_score || 0;
+
+    // 2. Get Daily Activity (Steps, Calories)
+    const { data: activityData } = await supabase
+      .from('daily_fitness_records')
+      .select('steps')
+      .eq('user_id', req.userId)
+      .eq('date', date)
+      .single();
+
+    const steps = activityData?.steps || 0;
+    const activityScore = Math.min(100, (steps / 8000) * 100); // 8000 steps = 100 points
+
+    // 3. Compute Holistic Score
+    // Weighting: 60% Sleep, 40% Activity
+    const holisticScore = Math.round((sleepScore * 0.6) + (activityScore * 0.4));
+
+    return res.json({ date, healthScore: holisticScore });
+  } catch (error) {
+    console.error('Health score error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

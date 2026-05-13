@@ -67,6 +67,7 @@ app.use('/api/coach', require('./routes/coach'));
 app.use('/api/workouts', require('./routes/workouts'));
 app.use('/api/meditation', require('./routes/meditation'));
 app.use('/api/timers', require('./routes/timers'));
+app.use('/api/devices', require('./routes/devices'));
 
 // Global error handler
 app.use((err, req, res, next) => {

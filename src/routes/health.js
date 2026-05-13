@@ -30,21 +30,52 @@ router.post('/sync', auth, async (req, res) => {
       }
     }
 
-    const rows = metrics.map((m) => ({
-      user_id: req.userId,
-      heart_rate: m.heartRate,
-      spo2: m.spo2,
-      systolic: m.systolic,
-      diastolic: m.diastolic,
-      stress: m.stress,
-      steps: m.steps,
-      calories: m.calories,
-      distance: m.distance,
-      temperature: m.temperature,
-      hrv: m.hrv,
-      health_score: m.healthScore,
-      recorded_at: m.recordedAt,
-    }));
+    // Fetch user profile for BMR calculation
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', req.userId)
+      .single();
+
+    let age = 30, weight = 70, height = 175, gender = 'male';
+    if (profile) {
+      age = profile.age || age;
+      weight = profile.weight || weight;
+      height = profile.height || height;
+      gender = profile.gender ? profile.gender.toLowerCase() : gender;
+    }
+
+    let bmr = 0;
+    if (gender === 'male' || gender === 'm') {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
+    } else {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
+    }
+
+    // Assuming sync intervals are typically 5-15 minutes, we calculate BMR per minute.
+    // If interval isn't strictly defined in the payload, we can just log active calories for the steps.
+    // For simplicity, we just calculate active calories based on steps (approx 0.04 kcal per step).
+    // The daily summary can add the full BMR.
+
+    const rows = metrics.map((m) => {
+      const activeCalories = (m.steps || 0) * 0.04;
+      
+      return {
+        user_id: req.userId,
+        heart_rate: m.heartRate,
+        spo2: m.spo2,
+        systolic: m.systolic,
+        diastolic: m.diastolic,
+        stress: m.stress,
+        steps: m.steps,
+        calories: activeCalories, // Overriding client's calorie calculation
+        distance: m.distance,
+        temperature: m.temperature,
+        hrv: m.hrv,
+        health_score: m.healthScore,
+        recorded_at: m.recordedAt,
+      };
+    });
 
     const { data, error } = await supabase
       .from('health_metrics')
@@ -203,12 +234,16 @@ router.post('/steps', auth, async (req, res) => {
   try {
     const { steps, goal, progress, date } = req.body;
     
+    // Server-side active calorie calculation
+    const activeCalories = (steps || 0) * 0.04;
+    
     // Insert into health_metrics to maintain historical data
     const { error } = await supabase
       .from('health_metrics')
       .insert({
         user_id: req.userId,
         steps: steps,
+        calories: activeCalories,
         recorded_at: getTargetDate(date)
       });
       
@@ -227,26 +262,77 @@ router.get('/steps', auth, async (req, res) => {
 });
 
 /**
- * POST /calories
+ * GET /trends
+ * Returns 7-day and 30-day running averages for HRV and Heart Rate
  */
-router.post('/calories', auth, async (req, res) => {
+router.get('/trends', auth, async (req, res) => {
   try {
-    const { calories, goal, progress, date } = req.body;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    const { error } = await supabase
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // Fetch all records for the last 30 days
+    const { data, error } = await supabase
       .from('health_metrics')
-      .insert({
-        user_id: req.userId,
-        calories: calories,
-        recorded_at: getTargetDate(date)
-      });
-      
-    if (error) throw error;
+      .select('recorded_at, heart_rate, hrv')
+      .eq('user_id', req.userId)
+      .gte('recorded_at', thirtyDaysAgo.toISOString())
+      .order('recorded_at', { ascending: false });
+
+    if (error) {
+      console.error('Supabase trends error:', error);
+      return res.status(500).json({ error: 'Failed to fetch trends data' });
+    }
+
+    if (!data || data.length === 0) {
+       return res.json({
+         hrv: { sevenDayAvg: 0, thirtyDayAvg: 0 },
+         heartRate: { sevenDayAvg: 0, thirtyDayAvg: 0 }
+       });
+    }
+
+    let sumHr7 = 0, countHr7 = 0;
+    let sumHrv7 = 0, countHrv7 = 0;
     
-    return res.json({ success: true, data: req.body });
+    let sumHr30 = 0, countHr30 = 0;
+    let sumHrv30 = 0, countHrv30 = 0;
+
+    const sevenDaysISO = sevenDaysAgo.toISOString();
+
+    data.forEach(row => {
+       if (row.heart_rate && row.heart_rate > 0) {
+         sumHr30 += row.heart_rate;
+         countHr30++;
+         if (row.recorded_at >= sevenDaysISO) {
+           sumHr7 += row.heart_rate;
+           countHr7++;
+         }
+       }
+       if (row.hrv && row.hrv > 0) {
+         sumHrv30 += row.hrv;
+         countHrv30++;
+         if (row.recorded_at >= sevenDaysISO) {
+           sumHrv7 += row.hrv;
+           countHrv7++;
+         }
+       }
+    });
+
+    return res.json({
+      hrv: {
+        sevenDayAvg: countHrv7 > 0 ? Math.round(sumHrv7 / countHrv7) : 0,
+        thirtyDayAvg: countHrv30 > 0 ? Math.round(sumHrv30 / countHrv30) : 0
+      },
+      heartRate: {
+        sevenDayAvg: countHr7 > 0 ? Math.round(sumHr7 / countHr7) : 0,
+        thirtyDayAvg: countHr30 > 0 ? Math.round(sumHr30 / countHr30) : 0
+      }
+    });
   } catch (error) {
-    console.error('Calories log error:', error);
-    return res.status(500).json({ success: false, error: 'Internal server error' });
+    console.error('Trends error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
