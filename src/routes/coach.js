@@ -3,6 +3,8 @@ const router = express.Router();
 const supabase = require('../db/supabase');
 const auth = require('../middleware/auth');
 const { GoogleGenAI } = require('@google/genai');
+const fs = require('fs');
+const path = require('path');
 
 // Initialize Gemini client (lazy — only used when /chat is called)
 let genAI;
@@ -17,10 +19,8 @@ function getGenAI() {
   return genAI;
 }
 
-const SYSTEM_PROMPT = `You are AURA, a friendly and knowledgeable wellness coach inside the InnerPulse health app. 
-Your role is to provide helpful, empathetic, and evidence-based advice on fitness, nutrition, sleep, stress management, and mental well-being. 
-Keep responses concise (2-3 paragraphs max). Use an encouraging tone. 
-Do NOT provide medical diagnoses or replace professional medical advice — always recommend consulting a healthcare provider for serious concerns.`;
+const promptPath = path.join(__dirname, '..', 'prompts', 'aura_system_prompt.md');
+const SYSTEM_PROMPT = fs.readFileSync(promptPath, 'utf8');
 
 /**
  * GET /history
