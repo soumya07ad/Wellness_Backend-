@@ -34,6 +34,7 @@ router.get('/history', auth, async (req, res) => {
       .from('coach_sessions')
       .select('id, created_at')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     if (sessionsError) {
@@ -207,10 +208,10 @@ router.delete('/session/:id', auth, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Delete session (messages will cascade)
+    // Soft Delete session (messages will remain but be orphaned)
     const { error: deleteError } = await supabase
       .from('coach_sessions')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id);
 
     if (deleteError) {

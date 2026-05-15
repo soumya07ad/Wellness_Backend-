@@ -64,6 +64,7 @@ router.get('/recent', auth, async (req, res) => {
       .from('mood_entries')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .gte('date', sevenDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: false });
 
@@ -95,7 +96,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('mood_entries')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id)
       .eq('user_id', req.userId);
 
@@ -124,6 +125,7 @@ router.get('/monthly', auth, async (req, res) => {
       .from('mood_entries')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: false });
 
@@ -167,6 +169,7 @@ router.get('/yearly', auth, async (req, res) => {
       .from('mood_entries')
       .select('score, date')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .gte('date', oneYearAgo.toISOString().split('T')[0]);
 
     if (error) {

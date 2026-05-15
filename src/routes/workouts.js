@@ -17,6 +17,7 @@ router.get('/', auth, async (req, res) => {
       .from('workouts')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     if (date) {
@@ -97,7 +98,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('workouts')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id)
       .eq('user_id', req.userId);
 
@@ -124,7 +125,8 @@ router.get('/stats', auth, async (req, res) => {
     const { data, error } = await supabase
       .from('workouts')
       .select('type, duration, calories_burned, distance')
-      .eq('user_id', req.userId);
+      .eq('user_id', req.userId)
+      .eq('is_deleted', false);
 
     if (error) {
       console.error('Supabase workout stats error:', error);
@@ -179,7 +181,8 @@ router.get('/personal-records', auth, async (req, res) => {
     const { data, error } = await supabase
       .from('workouts')
       .select('duration, calories_burned, distance, intensity')
-      .eq('user_id', req.userId);
+      .eq('user_id', req.userId)
+      .eq('is_deleted', false);
 
     if (error) {
       console.error('Supabase personal records error:', error);

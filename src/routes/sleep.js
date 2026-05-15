@@ -73,6 +73,7 @@ router.get('/health-score', auth, async (req, res) => {
       .select('quality_score')
       .eq('user_id', req.userId)
       .eq('date', date)
+      .eq('is_deleted', false)
       .single();
 
     const sleepScore = sleepData?.quality_score || 0;
@@ -113,6 +114,7 @@ router.get('/recent', auth, async (req, res) => {
       .select('*')
       .eq('user_id', req.userId)
       .gte('date', sevenDaysAgo.toISOString().split('T')[0])
+      .eq('is_deleted', false)
       .order('date', { ascending: false });
 
     if (error) {
@@ -143,7 +145,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('sleep_entries')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id)
       .eq('user_id', req.userId);
 
@@ -173,6 +175,7 @@ router.get('/monthly', auth, async (req, res) => {
       .select('*')
       .eq('user_id', req.userId)
       .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
+      .eq('is_deleted', false)
       .order('date', { ascending: false });
 
     if (error) {
@@ -200,6 +203,7 @@ router.get('/yearly', auth, async (req, res) => {
       .from('sleep_entries')
       .select('sleep_hours, date')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .gte('date', oneYearAgo.toISOString().split('T')[0]);
 
     if (error) {

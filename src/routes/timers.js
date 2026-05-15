@@ -14,6 +14,7 @@ router.get('/', auth, async (req, res) => {
       .from('timers')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -125,7 +126,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('timers')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id)
       .eq('user_id', req.userId);
 

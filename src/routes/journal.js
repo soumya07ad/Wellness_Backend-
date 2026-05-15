@@ -60,6 +60,7 @@ router.get('/recent', auth, async (req, res) => {
       .from('journal_entries')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .gte('date', sevenDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: false });
 
@@ -91,7 +92,7 @@ router.delete('/:id', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('journal_entries')
-      .delete()
+      .update({ is_deleted: true })
       .eq('id', id)
       .eq('user_id', req.userId);
 

@@ -13,6 +13,7 @@ router.get('/', auth, async (req, res) => {
       .from('paired_devices')
       .select('*')
       .eq('user_id', req.userId)
+      .eq('is_deleted', false)
       .order('last_connected_at', { ascending: false });
 
     if (error) {
@@ -57,6 +58,7 @@ router.post('/', auth, async (req, res) => {
         .update({
           device_name: deviceName,
           ring_type: ringType,
+          is_deleted: false,
           last_connected_at: new Date().toISOString()
         })
         .eq('id', existingDevice.id)
@@ -106,7 +108,7 @@ router.delete('/:mac', auth, async (req, res) => {
 
     const { error } = await supabase
       .from('paired_devices')
-      .delete()
+      .update({ is_deleted: true })
       .eq('mac_address', mac)
       .eq('user_id', req.userId);
 
